@@ -22,8 +22,6 @@ x-sentry-defaults: &sentry_defaults
       <<: *depends_on-healthy
     kafka:
       <<: *depends_on-healthy
-    postgres:
-      <<: *depends_on-healthy
     memcached:
       <<: *depends_on-default
     smtp:
@@ -116,32 +114,6 @@ services:
       nofile:
         soft: 10032
         hard: 10032
-  postgres:
-    <<: *restart_policy
-    image: "postgres:9.6"
-    healthcheck:
-      <<: *healthcheck_defaults
-      # Using default user "postgres" from sentry/sentry.conf.example.py or value of POSTGRES_USER if provided
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-    command:
-      [
-        "postgres",
-        "-c",
-        "wal_level=logical",
-        "-c",
-        "max_replication_slots=1",
-        "-c",
-        "max_wal_senders=1",
-      ]
-    environment:
-      POSTGRES_HOST_AUTH_METHOD: "trust"
-    entrypoint: /opt/sentry/postgres-entrypoint.sh
-    volumes:
-      - "sentry-postgres:/var/lib/postgresql/data"
-      - type: bind
-        read_only: true
-        source: ./postgres/
-        target: /opt/sentry/
   zookeeper:
     <<: *restart_policy
     image: "confluentinc/cp-zookeeper:5.5.0"
@@ -288,6 +260,8 @@ services:
       - "sentry-symbolicator:/data"
   web:
     <<: *sentry_defaults
+    ports:
+      - '127.0.0.1:9000:9000/tcp'
     healthcheck:
       <<: *healthcheck_defaults
       test:
@@ -324,19 +298,6 @@ services:
         BASE_IMAGE: "$SENTRY_IMAGE"
     entrypoint: "/entrypoint.sh"
     command: '"0 0 * * * gosu sentry sentry cleanup --days $SENTRY_EVENT_RETENTION_DAYS"'
-  nginx:
-    <<: *restart_policy
-    ports:
-      - "$SENTRY_BIND:80/tcp"
-    image: "nginx:1.21.4-alpine"
-    volumes:
-      - type: bind
-        read_only: true
-        source: ./nginx
-        target: /etc/nginx
-    depends_on:
-      - web
-      - relay
   relay:
     <<: *restart_policy
     image: "$RELAY_IMAGE"
@@ -349,6 +310,8 @@ services:
         read_only: true
         source: ./geoip
         target: /geoip
+    ports:
+      - '127.0.0.1:3000:3000'
     depends_on:
       kafka:
         <<: *depends_on-healthy
@@ -359,8 +322,6 @@ services:
 volumes:
   # These store application data that should persist across restarts.
   sentry-data:
-    external: true
-  sentry-postgres:
     external: true
   sentry-redis:
     external: true
